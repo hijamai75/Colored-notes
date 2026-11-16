@@ -153,6 +153,8 @@ main { flex: 1; overflow-y: auto; padding: 12px 16px 16px; -webkit-overflow-scro
 .sheet-in { max-width: 760px; width: 100%; margin: 0 auto; flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .sheet-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: calc(12px + env(safe-area-inset-top)) 16px 12px; border-bottom: 3px solid var(--hue); }
 .sheet-top .mini { background: transparent; border-color: var(--ink); }
+.sheet-top .mini:disabled { opacity: .35; }
+.toast button { margin-left: 12px; background: transparent; border: 1px solid var(--bg); color: var(--bg); border-radius: 8px; padding: 4px 12px; font-weight: 700; }
 .saved { font-size: 12px; color: var(--muted); }
 .sheet-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
 #f-title {
@@ -241,7 +243,11 @@ main { flex: 1; overflow-y: auto; padding: 12px 16px 16px; -webkit-overflow-scro
     <div class="sheet-top">
       <button class="mini" id="e-back">Done</button>
       <span class="saved" id="e-saved"></span>
-      <button class="mini" id="e-find">Find in note</button>
+      <span class="row" style="flex-wrap:nowrap;gap:6px">
+        <button class="mini" id="e-undo" aria-label="Undo" title="Undo" disabled>&#8630;</button>
+        <button class="mini" id="e-redo" aria-label="Redo" title="Redo" disabled>&#8631;</button>
+        <button class="mini" id="e-find">Find</button>
+      </span>
     </div>
     <div class="findbar" id="findbar" hidden>
       <input id="find-q" type="search" placeholder="Find in this note" autocomplete="off" aria-label="Find in this note" enterkeyhint="search">
@@ -307,9 +313,15 @@ main { flex: 1; overflow-y: auto; padding: 12px 16px 16px; -webkit-overflow-scro
 
   /* ---------- storage ---------- */
   var writing = new Map();
-  function toast(msg) {
-    var t = $("toast"); t.textContent = msg; t.hidden = false;
-    clearTimeout(toast.t); toast.t = setTimeout(function () { t.hidden = true; }, 4000);
+  function toast(msg, label, fn) {
+    var t = $("toast"); t.textContent = msg;
+    if (label) {
+      var b = document.createElement("button"); b.textContent = label;
+      b.addEventListener("click", function () { t.hidden = true; fn(); });
+      t.appendChild(b);
+    }
+    t.hidden = false;
+    clearTimeout(toast.t); toast.t = setTimeout(function () { t.hidden = true; }, label ? 8000 : 4000);
   }
   function saveFailed() { toast("That change could not be saved. Check your connection and try again."); }
   function localPersist() {
@@ -565,6 +577,7 @@ main { flex: 1; overflow-y: auto; padding: 12px 16px 16px; -webkit-overflow-scro
     $("e-confirm").hidden = true; $("e-actions").hidden = false;
     if (draft.type === "list") renderItems();
     paintEditor();
+    resetHist();
     $("sheet").hidden = false;
     if (draftIsNew) (draft.type === "list" ? $("f-add") : $("f-title")).focus();
   }
@@ -580,13 +593,47 @@ main { flex: 1; overflow-y: auto; padding: 12px 16px 16px; -webkit-overflow-scro
     draftIsNew = false; dirty = false;
     $("e-saved").textContent = "Saved";
   }
-  function touch() {
+  function markDirty() {
     dirty = true; $("e-saved").textContent = "";
     clearTimeout(saveTimer); saveTimer = setTimeout(commit, 800);
+  }
+  var hist = [], hpos = 0, snapTimer = null;
+  function snapOf() {
+    return JSON.stringify({ title: draft.title || "", body: draft.body || "", items: draft.items || [], color: draft.color });
+  }
+  function undoButtons() {
+    $("e-undo").disabled = hpos <= 0;
+    $("e-redo").disabled = hpos >= hist.length - 1;
+  }
+  function takeSnap() {
+    clearTimeout(snapTimer); snapTimer = null;
+    if (!draft) return;
+    var now = snapOf();
+    if (now === hist[hpos]) return;
+    hist = hist.slice(0, hpos + 1); hist.push(now);
+    if (hist.length > 200) hist.shift();
+    hpos = hist.length - 1;
+    undoButtons();
+  }
+  function resetHist() { clearTimeout(snapTimer); snapTimer = null; hist = [snapOf()]; hpos = 0; undoButtons(); }
+  function applySnap() {
+    var o = JSON.parse(hist[hpos]);
+    draft.title = o.title; draft.body = o.body; draft.items = o.items; draft.color = o.color;
+    $("f-title").value = o.title; $("f-body").value = o.body;
+    if (draft.type === "list") renderItems(); else if (findOpen) runFind(false);
+    paintEditor(); undoButtons(); markDirty();
+  }
+  function undo() { takeSnap(); if (hpos > 0) { hpos--; applySnap(); } }
+  function redo() { takeSnap(); if (hpos < hist.length - 1) { hpos++; applySnap(); } }
+  function touch() {
+    markDirty();
+    if (hist[hpos] !== undefined && $("e-undo").disabled) $("e-undo").disabled = false;
+    clearTimeout(snapTimer); snapTimer = setTimeout(takeSnap, 600);
   }
   function closeEditor() {
     addPending();
     commit();
+    clearTimeout(snapTimer);
     draft = null; draftId = null;
     $("sheet").hidden = true;
     render();
@@ -636,6 +683,8 @@ main { flex: 1; overflow-y: auto; padding: 12px 16px 16px; -webkit-overflow-scro
   $("new-list").addEventListener("click", function () { openEditor(null, "list"); });
 
   $("e-back").addEventListener("click", closeEditor);
+  $("e-undo").addEventListener("click", undo);
+  $("e-redo").addEventListener("click", redo);
   $("f-title").addEventListener("input", function () { draft.title = this.value; touch(); });
   $("f-body").addEventListener("input", function () { draft.body = this.value; touch(); if (findOpen) runFind(false); });
   $("f-body").addEventListener("scroll", function () { $("f-hl").scrollTop = this.scrollTop; });
@@ -661,11 +710,15 @@ main { flex: 1; overflow-y: auto; padding: 12px 16px 16px; -webkit-overflow-scro
   $("e-delete").addEventListener("click", function () { $("e-confirm").hidden = false; $("e-actions").hidden = true; });
   $("e-keep").addEventListener("click", function () { $("e-confirm").hidden = true; $("e-actions").hidden = false; });
   $("e-really").addEventListener("click", function () {
-    clearTimeout(saveTimer);
-    var id = draftId, wasNew = draftIsNew;
+    clearTimeout(saveTimer); clearTimeout(snapTimer);
+    var id = draftId, old = notes.get(id);
     draft = null; draftId = null; dirty = false;
-    if (!wasNew || notes.has(id)) removeNote(id);
-    $("sheet").hidden = true; render();
+    $("sheet").hidden = true;
+    if (old) {
+      removeNote(id);
+      toast("Note deleted", "Undo", function () { saveNote(id, old); render(); });
+    }
+    render();
   });
   document.addEventListener("visibilitychange", function () {
     if (document.hidden) commit(); else if (!draft) render();
