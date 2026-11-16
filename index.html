@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hue Notes</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Hue Notes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#eceff3" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#11141a" media="(prefers-color-scheme: dark)">
+<meta name="referrer" content="no-referrer">
+<link rel="apple-touch-icon" href="icon.png">
+<link rel="icon" href="icon.png">
+<style>
+/* Layout idea: one-screen app. Fixed header (name, search, colour filter, tabs),
+   scrolling two-column wall of tinted note slips, fixed bottom bar for new notes. */
+:root {
+  --bg: #eceff3;
+  --surface: #ffffff;
+  --ink: #1a1e27;
+  --muted: #5a6373;
+  --line: #d3d8e0;
+  --accent: #2747d8;
+  --critical: #b3261e;
+  --tint: 26%;
+  --c-red: #e5484d;
+  --c-orange: #f08a24;
+  --c-yellow: #e9c21a;
+  --c-green: #2fa866;
+  --c-blue: #3b8fe8;
+  --c-purple: #8b5cf6;
+  --c-pink: #e55b9c;
+  --c-grey: #7b8494;
+  --display: ui-rounded, "SF Pro Rounded", "Avenir Next", "Segoe UI", sans-serif;
+  --body: -apple-system, "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11141a; --surface: #1b1f28; --ink: #e9ecf2; --muted: #9aa3b3;
+    --line: #2d3340; --accent: #8fa6ff; --critical: #ff8a80; --tint: 30%;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11141a; --surface: #1b1f28; --ink: #e9ecf2; --muted: #9aa3b3;
+  --line: #2d3340; --accent: #8fa6ff; --critical: #ff8a80; --tint: 30%;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--body); font-size: 16px; line-height: 1.4;
+  -webkit-text-size-adjust: 100%;
+}
+button, input, textarea, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+[hidden] { display: none !important; }
+
+.app { height: 100%; display: flex; flex-direction: column; max-width: 760px; margin: 0 auto; }
+header { padding: calc(14px + env(safe-area-inset-top)) 16px 0; display: flex; flex-direction: column; gap: 10px; }
+.top { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+h1 { font-family: var(--display); font-weight: 700; font-size: 28px; letter-spacing: -0.02em; margin: 0; }
+h1 span { color: var(--accent); }
+.status { font-size: 12px; color: var(--muted); text-align: right; }
+.search { display: flex; gap: 8px; }
+.search input {
+  flex: 1; min-width: 0; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--line); background: var(--surface);
+}
+.search select {
+  padding: 10px 8px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface);
+}
+.swatches { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.sw {
+  width: 30px; height: 30px; border-radius: 50%; border: 2px solid transparent;
+  background: var(--hue); padding: 0; position: relative;
+}
+.sw[aria-pressed="true"] { border-color: var(--ink); box-shadow: 0 0 0 2px var(--bg) inset; }
+.sw.all {
+  width: auto; border-radius: 15px; padding: 0 12px; background: var(--surface);
+  border: 1px solid var(--line); font-size: 13px; font-weight: 600;
+}
+.sw.all[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); box-shadow: none; }
+.tabs { display: flex; border-bottom: 1px solid var(--line); gap: 4px; }
+.tab {
+  background: none; border: 0; padding: 10px 12px; font-weight: 600; font-size: 14px;
+  color: var(--muted); border-bottom: 3px solid transparent; margin-bottom: -1px;
+}
+.tab[aria-pressed="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+.tab b { font-weight: 500; font-variant-numeric: tabular-nums; opacity: .7; margin-left: 4px; }
+
+main { flex: 1; overflow-y: auto; padding: 12px 16px 16px; -webkit-overflow-scrolling: touch; }
+.due { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.due-row {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border: 1px solid var(--critical); border-radius: 10px; background: var(--surface);
+}
+.due-row .lbl { font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--critical); }
+.due-row .t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.mini { border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 6px 10px; font-size: 13px; font-weight: 600; }
+
+.wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.card {
+  --hue: var(--c-yellow);
+  display: flex; flex-direction: column; gap: 6px; text-align: left; align-items: stretch;
+  background: color-mix(in oklab, var(--hue) var(--tint), var(--surface));
+  border: 0; border-radius: 4px 14px 4px 4px; padding: 10px 12px 12px;
+  box-shadow: 3px 3px 0 color-mix(in oklab, var(--hue) 70%, var(--bg));
+  min-height: 96px; overflow: hidden;
+}
+.card .meta { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.card .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--hue); flex: none; }
+.card .ct { font-family: var(--display); font-weight: 700; font-size: 16px; line-height: 1.2; overflow-wrap: anywhere; }
+.card .cb {
+  font-size: 14px; white-space: pre-wrap; overflow-wrap: anywhere;
+  display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical; overflow: hidden;
+}
+.card ul { list-style: none; margin: 0; padding: 0; font-size: 14px; display: flex; flex-direction: column; gap: 2px; }
+.card li { display: flex; gap: 6px; align-items: baseline; overflow-wrap: anywhere; }
+.card li i { font-style: normal; flex: none; width: 12px; height: 12px; border: 1.5px solid var(--ink); border-radius: 3px; transform: translateY(1px); }
+.card li.done { color: var(--muted); text-decoration: line-through; }
+.card li.done i { background: var(--ink); }
+.card .more { font-size: 12px; color: var(--muted); }
+.chip {
+  align-self: flex-start; margin-top: auto; font-size: 12px; font-weight: 600;
+  padding: 2px 8px; border-radius: 10px; border: 1px solid var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+.chip.over { border-color: var(--critical); color: var(--critical); }
+.chip.off { border-style: dashed; color: var(--muted); border-color: var(--muted); }
+.backup { border: 1px solid var(--line); background: var(--surface); border-radius: 12px; padding: 12px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
+.backup p { margin: 0; color: var(--muted); }
+.empty { color: var(--muted); padding: 32px 8px; text-align: center; }
+.empty strong { display: block; font-family: var(--display); color: var(--ink); font-size: 20px; margin-bottom: 4px; }
+
+.bar { display: flex; gap: 10px; padding: 10px 16px calc(14px + env(safe-area-inset-bottom)); border-top: 1px solid var(--line); background: var(--bg); }
+.bar button {
+  flex: 1; padding: 13px 10px; border-radius: 12px; border: 0; font-weight: 600;
+  background: var(--ink); color: var(--bg);
+}
+.bar button.alt { background: var(--surface); color: var(--ink); border: 1px solid var(--line); }
+
+/* Editor sheet */
+.sheet {
+  --hue: var(--c-yellow);
+  position: fixed; inset: 0; z-index: 5; display: flex; flex-direction: column;
+  background: color-mix(in oklab, var(--hue) var(--tint), var(--surface));
+}
+.sheet-in { max-width: 760px; width: 100%; margin: 0 auto; flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.sheet-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: calc(12px + env(safe-area-inset-top)) 16px 12px; border-bottom: 3px solid var(--hue); }
+.sheet-top .mini { background: transparent; border-color: var(--ink); }
+.saved { font-size: 12px; color: var(--muted); }
+.sheet-body { flex: 1; overflow-y: auto; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+#f-title {
+  font-family: var(--display); font-weight: 700; font-size: 24px; letter-spacing: -0.01em;
+  border: 0; background: transparent; padding: 4px 0; width: 100%;
+}
+#f-body {
+  flex: 1; min-height: 220px; border: 0; background: transparent; resize: none; width: 100%;
+  line-height: 1.5; padding: 0;
+}
+.ta-wrap { position: relative; flex: 1; min-height: 220px; display: flex; }
+.ta-wrap #f-body { position: relative; flex: 1; min-height: 0; }
+.hl {
+  position: absolute; inset: 0; overflow: hidden; pointer-events: none; color: transparent;
+  white-space: pre-wrap; overflow-wrap: break-word; line-height: 1.5;
+}
+.hl mark { color: transparent; border-radius: 3px; background: color-mix(in oklab, var(--accent) 30%, transparent); }
+.hl mark.cur { background: color-mix(in oklab, var(--accent) 65%, transparent); }
+.item.hit input[type="text"] { background: color-mix(in oklab, var(--accent) 22%, transparent); }
+.item.cur input[type="text"] { background: color-mix(in oklab, var(--accent) 50%, transparent); }
+.findbar { display: flex; align-items: center; gap: 6px; padding: 8px 16px; border-bottom: 1px solid color-mix(in oklab, var(--ink) 15%, transparent); }
+.findbar input { flex: 1; min-width: 0; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--ink); background: transparent; }
+.findbar .mini { background: transparent; border-color: var(--ink); padding: 6px 9px; }
+.findbar .n { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; min-width: 52px; text-align: center; }
+#f-title:focus, #f-body:focus, .item input[type="text"]:focus { outline: none; }
+.items { display: flex; flex-direction: column; gap: 4px; }
+.item { display: flex; align-items: center; gap: 10px; }
+.item input[type="checkbox"] { width: 22px; height: 22px; flex: none; accent-color: var(--ink); }
+.item input[type="text"] { flex: 1; min-width: 0; border: 0; border-bottom: 1px solid color-mix(in oklab, var(--ink) 20%, transparent); background: transparent; padding: 8px 0; }
+.item.done input[type="text"] { text-decoration: line-through; color: var(--muted); }
+.item button { border: 0; background: transparent; font-size: 20px; line-height: 1; padding: 6px 8px; color: var(--muted); }
+.sheet-foot { padding: 12px 16px calc(16px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 12px; border-top: 1px solid color-mix(in oklab, var(--ink) 15%, transparent); }
+.row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.row label { font-size: 13px; font-weight: 600; }
+#f-remind { padding: 8px; border-radius: 8px; border: 1px solid var(--ink); background: transparent; min-width: 0; flex: 1; }
+.sheet .sw[aria-pressed="true"] { box-shadow: 0 0 0 2px var(--surface) inset; }
+.danger { color: var(--critical); border-color: var(--critical) !important; }
+.spacer { flex: 1; }
+.toast {
+  position: fixed; left: 16px; right: 16px; bottom: 84px; z-index: 9; margin: 0 auto; max-width: 420px;
+  background: var(--ink); color: var(--bg); padding: 10px 14px; border-radius: 10px; font-size: 14px; text-align: center;
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="top">
+      <h1>Hue<span>.</span>Notes</h1>
+      <button class="mini" id="b-toggle">Backup</button>
+    </div>
+    <div class="backup" id="backup" hidden>
+      <p><span id="status">On this iPhone only</span>. Notes never leave this device unless you export them. Removing the app from your home screen erases them, so export a backup now and then.</p>
+      <div class="row">
+        <button class="mini" id="b-export">Export backup</button>
+        <button class="mini" id="b-import">Import backup</button>
+        <input type="file" id="b-file" accept=".json,application/json" hidden>
+      </div>
+    </div>
+    <div class="search">
+      <input id="q" type="search" placeholder="Search notes" autocomplete="off" aria-label="Search notes">
+      <select id="sort" aria-label="Sort notes">
+        <option value="edited">Newest</option>
+        <option value="color">By colour</option>
+        <option value="title">A to Z</option>
+      </select>
+    </div>
+    <div class="swatches" id="filter" aria-label="Filter by colour"></div>
+    <div class="tabs">
+      <button class="tab" id="tab-notes" data-tab="notes" aria-pressed="true">Notes<b></b></button>
+      <button class="tab" id="tab-archive" data-tab="archive" aria-pressed="false">Archive<b></b></button>
+    </div>
+  </header>
+  <main>
+    <div class="wall" id="wall"></div>
+    <div class="empty" id="empty" hidden></div>
+  </main>
+  <div class="bar">
+    <button id="new-text">New note</button>
+    <button id="new-list" class="alt">New checklist</button>
+  </div>
+</div>
+
+<div class="sheet" id="sheet" hidden>
+  <div class="sheet-in">
+    <div class="sheet-top">
+      <button class="mini" id="e-back">Done</button>
+      <span class="saved" id="e-saved"></span>
+      <button class="mini" id="e-find">Find in note</button>
+    </div>
+    <div class="findbar" id="findbar" hidden>
+      <input id="find-q" type="search" placeholder="Find in this note" autocomplete="off" aria-label="Find in this note" enterkeyhint="search">
+      <span class="n" id="find-n" role="status"></span>
+      <button class="mini" id="find-prev" aria-label="Previous match">&#8593;</button>
+      <button class="mini" id="find-next" aria-label="Next match">&#8595;</button>
+      <button class="mini" id="find-close" aria-label="Close find">&#215;</button>
+    </div>
+    <div class="sheet-body">
+      <input id="f-title" type="text" placeholder="Title" autocomplete="off" aria-label="Title">
+      <div class="ta-wrap" id="f-wrap">
+        <div class="hl" id="f-hl" aria-hidden="true"></div>
+        <textarea id="f-body" placeholder="Write your note" aria-label="Note text"></textarea>
+      </div>
+      <div id="f-list" hidden>
+        <div class="items" id="f-items"></div>
+        <div class="item">
+          <input type="checkbox" disabled aria-hidden="true">
+          <input type="text" id="f-add" placeholder="Add an item" autocomplete="off" aria-label="Add an item" enterkeyhint="done">
+          <button id="f-addbtn" aria-label="Add item">+</button>
+        </div>
+      </div>
+    </div>
+    <div class="sheet-foot">
+      <div class="swatches" id="e-colors" aria-label="Note colour"></div>
+      <div class="row" id="e-actions">
+        <button class="mini" id="e-archive" style="background:transparent">Archive</button>
+        <span class="spacer"></span>
+        <button class="mini danger" id="e-delete" style="background:transparent">Delete</button>
+      </div>
+      <div class="row" id="e-confirm" hidden>
+        <span>Delete this note for good?</span>
+        <span class="spacer"></span>
+        <button class="mini" id="e-keep" style="background:transparent">Keep</button>
+        <button class="mini danger" id="e-really" style="background:transparent">Delete</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" role="alert" hidden></div>
+
+<script>
+(function () {
+  "use strict";
+  var COLORS = [
+    ["red", "Red"], ["orange", "Orange"], ["yellow", "Yellow"], ["green", "Green"],
+    ["blue", "Blue"], ["purple", "Purple"], ["pink", "Pink"], ["grey", "Grey"]
+  ];
+  var LS_KEY = "hue-notes-v1";
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c];
+    });
+  };
+
+  var notes = new Map();
+  var loaded = false;
+  var mode = "loading"; // loading | cloud | local
+  var col = null;
+  var tab = "notes", colorFilter = null, q = "", sort = "edited";
+  var draft = null, draftId = null, draftIsNew = false, dirty = false, saveTimer = null;
+
+  /* ---------- storage ---------- */
+  var writing = new Map();
+  function toast(msg) {
+    var t = $("toast"); t.textContent = msg; t.hidden = false;
+    clearTimeout(toast.t); toast.t = setTimeout(function () { t.hidden = true; }, 4000);
+  }
+  function saveFailed() { toast("That change could not be saved. Check your connection and try again."); }
+  function localPersist() {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(Array.from(notes.entries()))); }
+    catch (e) { toast("This iPhone refused to save that change. Storage may be full."); }
+  }
+  function saveNote(id, data) {
+    notes.set(id, data);
+    localPersist();
+  }
+  function removeNote(id) {
+    notes.delete(id);
+    localPersist();
+  }
+  function setStatus(s) { $("status").textContent = s; }
+
+  function startLocal() {
+    mode = "local";
+    try {
+      var raw = localStorage.getItem(LS_KEY);
+      if (raw) notes = new Map(JSON.parse(raw));
+    } catch (e) {}
+    loaded = true;
+    setStatus("On this iPhone only");
+    render();
+  }
+  function boot() {
+    startLocal();
+    try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
+    if ("serviceWorker" in navigator && location.protocol === "https:") {
+      navigator.serviceWorker.register("sw.js").catch(function () {});
+    }
+  }
+
+  /* ---------- backup ---------- */
+  function exportBackup() {
+    var data = JSON.stringify({ app: "hue-notes", v: 1, exported: Date.now(), notes: Array.from(notes.entries()) }, null, 1);
+    var name = "hue-notes-backup-" + new Date().toISOString().slice(0, 10) + ".json";
+    var file = null;
+    try { file = new File([data], name, { type: "application/json" }); } catch (e) {}
+    if (file && navigator.canShare && navigator.canShare({ files: [file] })) {
+      navigator.share({ files: [file] }).catch(function () {});
+      return;
+    }
+    var a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([data], { type: "application/json" }));
+    a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  }
+  function importBackup(text) {
+    var list;
+    try { var o = JSON.parse(text); list = Array.isArray(o) ? o : o.notes; } catch (e) {}
+    if (!Array.isArray(list)) return toast("That file is not a Hue Notes backup.");
+    var n = 0;
+    list.forEach(function (pair) {
+      if (!Array.isArray(pair) || typeof pair[0] !== "string" || !pair[1] || typeof pair[1] !== "object") return;
+      var have = notes.get(pair[0]);
+      if (!have || (pair[1].updated || 0) > (have.updated || 0)) { notes.set(pair[0], pair[1]); n++; }
+    });
+    localPersist(); render();
+    toast(n ? "Imported " + n + (n === 1 ? " note" : " notes") : "Nothing new in that backup");
+  }
+
+  /* ---------- helpers ---------- */
+  function fmtWhen(ms) {
+    return new Date(ms).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+  }
+  function fmtDay(ms) {
+    return new Date(ms).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  }
+  function toInput(ms) {
+    var d = new Date(ms - new Date(ms).getTimezoneOffset() * 60000);
+    return d.toISOString().slice(0, 16);
+  }
+  function titleOf(n) {
+    if (n.title && n.title.trim()) return n.title.trim();
+    var first = n.type === "list"
+      ? ((n.items || [])[0] || {}).t
+      : (n.body || "").trim().split("\n")[0];
+    return first ? String(first).slice(0, 60) : "Untitled";
+  }
+  function textOf(n) {
+    return [n.title || "", n.body || ""].concat((n.items || []).map(function (i) { return i.t; })).join("\n").toLowerCase();
+  }
+  function isDue(n) { return n.remindAt && !n.remindDone && !n.archived && n.remindAt <= Date.now(); }
+  function newId() { return "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+
+  /* ---------- list ---------- */
+  function visible() {
+    var arr = [];
+    notes.forEach(function (n, id) { arr.push({ id: id, n: n }); });
+    var needle = q.trim().toLowerCase();
+    arr = arr.filter(function (x) {
+      var n = x.n;
+      if (tab === "archive" ? !n.archived : n.archived) return false;
+      if (colorFilter && n.color !== colorFilter) return false;
+      if (needle && textOf(n).indexOf(needle) < 0) return false;
+      return true;
+    });
+    var ci = function (c) { for (var i = 0; i < COLORS.length; i++) if (COLORS[i][0] === c) return i; return 99; };
+    arr.sort(function (a, b) {
+      if (sort === "color") return ci(a.n.color) - ci(b.n.color) || b.n.updated - a.n.updated;
+      if (sort === "title") return titleOf(a.n).localeCompare(titleOf(b.n));
+      return (b.n.updated || 0) - (a.n.updated || 0);
+    });
+    return arr;
+  }
+  function cardHTML(x) {
+    var n = x.n, h = "";
+    h += '<button class="card" data-id="' + esc(x.id) + '" style="--hue:var(--c-' + esc(n.color || "yellow") + ')">';
+    h += '<span class="meta"><span class="dot"></span>' + esc(fmtDay(n.updated || Date.now())) + (n.type === "list" ? " · checklist" : "") + "</span>";
+    h += '<span class="ct">' + esc(titleOf(n)) + "</span>";
+    if (n.type === "list") {
+      var items = n.items || [];
+      h += "<ul>";
+      items.slice(0, 5).forEach(function (i) {
+        h += '<li class="' + (i.done ? "done" : "") + '"><i></i><span>' + esc(i.t) + "</span></li>";
+      });
+      h += "</ul>";
+      if (items.length > 5) h += '<span class="more">' + (items.length - 5) + " more</span>";
+    } else if (n.body && n.title && n.title.trim()) {
+      h += '<span class="cb">' + esc(n.body.slice(0, 240)) + "</span>";
+    } else if (n.body) {
+      var rest = n.body.trim().split("\n").slice(1).join("\n").trim();
+      if (rest) h += '<span class="cb">' + esc(rest.slice(0, 240)) + "</span>";
+    }
+    return h + "</button>";
+  }
+  function render() {
+    var counts = { notes: 0, archive: 0 };
+    notes.forEach(function (n) { if (n.archived) counts.archive++; else counts.notes++; });
+    ["notes", "archive"].forEach(function (t) {
+      var b = $("tab-" + t);
+      b.setAttribute("aria-pressed", String(tab === t));
+      b.querySelector("b").textContent = counts[t] ? counts[t] : "";
+    });
+    Array.prototype.forEach.call($("filter").children, function (b) {
+      b.setAttribute("aria-pressed", String((b.dataset.c || null) === colorFilter));
+    });
+    var list = visible();
+    $("wall").innerHTML = list.map(cardHTML).join("");
+    var e = $("empty");
+    if (list.length) { e.hidden = true; return; }
+    e.hidden = false;
+    if (!loaded) e.innerHTML = "<strong>Loading your notes</strong>";
+    else if (q.trim() || colorFilter) e.innerHTML = "<strong>No matches</strong>Try a different word or colour.";
+    else if (tab === "archive") e.innerHTML = "<strong>Archive is empty</strong>Archived notes wait here until you restore or delete them.";
+    else e.innerHTML = "<strong>No notes yet</strong>Start with New note or New checklist below.";
+  }
+
+  /* ---------- editor ---------- */
+  function swatchRow(el, withAll) {
+    var h = withAll ? '<button class="sw all" aria-pressed="true">All</button>' : "";
+    COLORS.forEach(function (c) {
+      h += '<button class="sw" data-c="' + c[0] + '" style="--hue:var(--c-' + c[0] + ')" aria-label="' + c[1] + '" title="' + c[1] + '" aria-pressed="false"></button>';
+    });
+    el.innerHTML = h;
+  }
+  function renderItems() {
+    var box = $("f-items"); box.innerHTML = "";
+    draft.items.forEach(function (it, i) {
+      var row = document.createElement("div");
+      row.className = "item" + (it.done ? " done" : "");
+      var cb = document.createElement("input"); cb.type = "checkbox"; cb.checked = !!it.done; cb.id = "it-c-" + i;
+      cb.setAttribute("aria-label", "Done");
+      cb.addEventListener("change", function () { it.done = cb.checked; row.classList.toggle("done", it.done); touch(); });
+      var tx = document.createElement("input"); tx.type = "text"; tx.value = it.t; tx.id = "it-t-" + i;
+      tx.setAttribute("aria-label", "Item " + (i + 1));
+      tx.addEventListener("input", function () { it.t = tx.value; touch(); });
+      var rm = document.createElement("button"); rm.textContent = "×"; rm.setAttribute("aria-label", "Remove item");
+      rm.addEventListener("click", function () { draft.items.splice(i, 1); renderItems(); touch(); });
+      row.appendChild(cb); row.appendChild(tx); row.appendChild(rm); box.appendChild(row);
+    });
+    if (findOpen) runFind();
+  }
+
+  /* ---------- find in note ---------- */
+  var findOpen = false, findIdx = 0;
+  function runFind(scroll) {
+    var needle = $("find-q").value.toLowerCase(), total = 0, hl = $("f-hl"), ta = $("f-body");
+    if (!draft) return;
+    if (draft.type === "list") {
+      var rows = $("f-items").children, hits = [];
+      Array.prototype.forEach.call(rows, function (r, i) {
+        r.classList.remove("hit", "cur");
+        if (needle && (draft.items[i].t || "").toLowerCase().indexOf(needle) >= 0) { r.classList.add("hit"); hits.push(r); }
+      });
+      total = hits.length;
+      if (findIdx >= total) findIdx = 0;
+      if (total) {
+        hits[findIdx].classList.add("cur");
+        if (scroll) hits[findIdx].scrollIntoView({ block: "center" });
+      }
+    } else {
+      var body = draft.body || "", low = body.toLowerCase(), pos = [], at = 0, i;
+      if (needle) while ((i = low.indexOf(needle, at)) >= 0) { pos.push(i); at = i + needle.length; }
+      total = pos.length;
+      if (findIdx >= total) findIdx = 0;
+      var h = "", last = 0;
+      pos.forEach(function (p, k) {
+        h += esc(body.slice(last, p)) + "<mark" + (k === findIdx ? ' class="cur"' : "") + ">" +
+          esc(body.slice(p, p + needle.length)) + "</mark>";
+        last = p + needle.length;
+      });
+      hl.innerHTML = total ? h + esc(body.slice(last)) + "\n" : "";
+      var cur = hl.querySelector("mark.cur");
+      if (cur && scroll) ta.scrollTop = Math.max(0, cur.offsetTop - 80);
+      hl.scrollTop = ta.scrollTop;
+    }
+    $("find-n").textContent = !needle ? "" : (total ? (findIdx + 1) + " of " + total : "No matches");
+    return total;
+  }
+  function stepFind(d) {
+    var total = runFind(false);
+    if (!total) return;
+    findIdx = (findIdx + d + total) % total;
+    runFind(true);
+  }
+  function openFind() {
+    findOpen = true; findIdx = 0;
+    $("findbar").hidden = false; $("find-q").focus(); runFind(true);
+  }
+  function closeFind() {
+    findOpen = false; $("findbar").hidden = true; $("find-q").value = ""; $("find-n").textContent = "";
+    $("f-hl").innerHTML = "";
+    Array.prototype.forEach.call($("f-items").children, function (r) { r.classList.remove("hit", "cur"); });
+  }
+  function paintEditor() {
+    $("sheet").style.setProperty("--hue", "var(--c-" + draft.color + ")");
+    Array.prototype.forEach.call($("e-colors").children, function (b) {
+      b.setAttribute("aria-pressed", String(b.dataset.c === draft.color));
+    });
+    $("e-archive").textContent = draft.archived ? "Restore" : "Archive";
+  }
+  function openEditor(id, type) {
+    if (id) {
+      draft = JSON.parse(JSON.stringify(notes.get(id)));
+      draftId = id; draftIsNew = false;
+    } else {
+      draft = { type: type, title: "", body: "", items: [], color: colorFilter || "yellow", archived: false,
+        remindAt: null, remindDone: false, created: Date.now(), updated: Date.now() };
+      draftId = newId(); draftIsNew = true;
+    }
+    if (!draft.items) draft.items = [];
+    if (!draft.color) draft.color = "yellow";
+    dirty = false;
+    $("f-title").value = draft.title || "";
+    $("f-body").value = draft.body || "";
+    $("f-wrap").hidden = draft.type === "list";
+    closeFind();
+    $("f-list").hidden = draft.type !== "list";
+    $("f-add").value = "";
+    $("e-saved").textContent = "";
+    $("e-confirm").hidden = true; $("e-actions").hidden = false;
+    if (draft.type === "list") renderItems();
+    paintEditor();
+    $("sheet").hidden = false;
+    if (draftIsNew) (draft.type === "list" ? $("f-add") : $("f-title")).focus();
+  }
+  function isBlank(d) {
+    return !(d.title || "").trim() && !(d.body || "").trim() && !(d.items || []).length;
+  }
+  function commit() {
+    clearTimeout(saveTimer);
+    if (!draft || !dirty) return;
+    if (draftIsNew && isBlank(draft)) return;
+    draft.updated = Date.now();
+    saveNote(draftId, JSON.parse(JSON.stringify(draft)));
+    draftIsNew = false; dirty = false;
+    $("e-saved").textContent = "Saved";
+  }
+  function touch() {
+    dirty = true; $("e-saved").textContent = "";
+    clearTimeout(saveTimer); saveTimer = setTimeout(commit, 800);
+  }
+  function closeEditor() {
+    addPending();
+    commit();
+    draft = null; draftId = null;
+    $("sheet").hidden = true;
+    render();
+  }
+  function addPending() {
+    if (!draft || draft.type !== "list") return;
+    var v = $("f-add").value.trim();
+    if (!v) return;
+    draft.items.push({ t: v, done: false });
+    $("f-add").value = ""; renderItems(); touch();
+  }
+
+  /* ---------- events ---------- */
+  swatchRow($("filter"), true);
+  swatchRow($("e-colors"), false);
+
+  $("filter").addEventListener("click", function (e) {
+    var b = e.target.closest(".sw"); if (!b) return;
+    colorFilter = b.dataset.c || null; render();
+  });
+  document.querySelector(".tabs").addEventListener("click", function (e) {
+    var b = e.target.closest(".tab"); if (!b) return;
+    tab = b.dataset.tab; render();
+  });
+  $("q").addEventListener("input", function () { q = this.value; render(); });
+  $("sort").addEventListener("change", function () {
+    sort = this.value; render();
+    try { localStorage.setItem("hue-notes-sort", sort); } catch (e) {}
+  });
+  try {
+    var s0 = localStorage.getItem("hue-notes-sort");
+    if (s0 === "color" || s0 === "title") { sort = s0; $("sort").value = s0; }
+  } catch (e) {}
+  $("wall").addEventListener("click", function (e) {
+    var c = e.target.closest(".card"); if (c && notes.has(c.dataset.id)) openEditor(c.dataset.id);
+  });
+  $("b-toggle").addEventListener("click", function () { $("backup").hidden = !$("backup").hidden; });
+  $("b-export").addEventListener("click", exportBackup);
+  $("b-import").addEventListener("click", function () { $("b-file").click(); });
+  $("b-file").addEventListener("change", function () {
+    var f = this.files && this.files[0]; if (!f) return;
+    var r = new FileReader();
+    r.onload = function () { importBackup(String(r.result)); };
+    r.readAsText(f); this.value = "";
+  });
+  $("new-text").addEventListener("click", function () { openEditor(null, "text"); });
+  $("new-list").addEventListener("click", function () { openEditor(null, "list"); });
+
+  $("e-back").addEventListener("click", closeEditor);
+  $("f-title").addEventListener("input", function () { draft.title = this.value; touch(); });
+  $("f-body").addEventListener("input", function () { draft.body = this.value; touch(); if (findOpen) runFind(false); });
+  $("f-body").addEventListener("scroll", function () { $("f-hl").scrollTop = this.scrollTop; });
+  $("e-find").addEventListener("click", function () { if (findOpen) closeFind(); else openFind(); });
+  $("find-q").addEventListener("input", function () { findIdx = 0; runFind(true); });
+  $("find-q").addEventListener("keydown", function (e) { if (e.key === "Enter") { e.preventDefault(); stepFind(1); } });
+  $("find-next").addEventListener("click", function () { stepFind(1); });
+  $("find-prev").addEventListener("click", function () { stepFind(-1); });
+  $("find-close").addEventListener("click", closeFind);
+  $("f-add").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") { e.preventDefault(); addPending(); $("f-add").focus(); }
+  });
+  $("f-addbtn").addEventListener("click", function () { addPending(); $("f-add").focus(); });
+  $("e-colors").addEventListener("click", function (e) {
+    var b = e.target.closest(".sw"); if (!b) return;
+    draft.color = b.dataset.c; paintEditor(); touch();
+  });
+  $("e-archive").addEventListener("click", function () {
+    draft.archived = !draft.archived; dirty = true;
+    var msg = draft.archived ? "Moved to Archive" : "Restored to Notes";
+    closeEditor(); toast(msg);
+  });
+  $("e-delete").addEventListener("click", function () { $("e-confirm").hidden = false; $("e-actions").hidden = true; });
+  $("e-keep").addEventListener("click", function () { $("e-confirm").hidden = true; $("e-actions").hidden = false; });
+  $("e-really").addEventListener("click", function () {
+    clearTimeout(saveTimer);
+    var id = draftId, wasNew = draftIsNew;
+    draft = null; draftId = null; dirty = false;
+    if (!wasNew || notes.has(id)) removeNote(id);
+    $("sheet").hidden = true; render();
+  });
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) commit(); else if (!draft) render();
+  });
+
+  boot();
+})();
+</script>
+</body>
+</html>
